@@ -1,7 +1,6 @@
 import datetime
 from typing import List
 from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
 import aiohttp
 import asyncio
 import requests
@@ -12,7 +11,6 @@ from tqdm import tqdm
 HOME_URL = 'https://4lapy.ru/'
 URL = 'https://4lapy.ru/catalog/koshki/korm-koshki/?section_id=2&sort=popular&page='
 
-ua = UserAgent()
 
 headers = {
     'authority': '4lapy.ru',
@@ -37,14 +35,17 @@ headers = {
 
 def get_data() -> List[dict]:
     json_list = []
-    i = 0
     for page_num in tqdm(range(1, 26), desc='Searching...'):
         page_url = URL + str(page_num)
-        response = requests.get(page_url, headers=headers)
+        try:
+            response = requests.get(page_url, headers=headers)
+        except Exception as e:
+            print(f'Ошибка сервера, {e}')
         result = response.text
         soup = BeautifulSoup(result, 'lxml')
         card_list = soup.find_all('div', class_='b-common-item__image-wrap')
-        prices = soup.find_all('a', class_='b-weight-container__link js-price active-link')
+        prices = soup.find_all(
+            'a', class_='b-weight-container__link js-price active-link')
         for price, card in zip(prices, card_list):
             new_price = price.get('data-price')
             old_price = price.get('data-oldprice')
@@ -81,12 +82,14 @@ def get_data() -> List[dict]:
 async def check_availability(item):
     async with aiohttp.ClientSession(headers=headers) as session:
         url = f'https://4lapy.ru/ajax/catalog/product-info/product/pickup/?offer={item["id"]}'
-        async with session.get(url, timeout=100) as response:
-            await asyncio.sleep(1)
-            availability = await response.json()
-            if not availability['data']:
-                return None
-            return item
+        try:
+            async with session.get(url, headers=headers) as response:
+                availability = await response.json()
+                if not availability['data']:
+                    return None
+                return item
+        except aiohttp.ContentTypeError:
+            print('Ошибка сервера, попробуйте позже')
 
 
 async def check_available(json_list):
